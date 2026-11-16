@@ -10,6 +10,9 @@ Sistema de Visão Computacional baseado em Transferência de Aprendizado (`Mobil
 2. **Igor Paixão Sarak** — RM 563726
 3. **Bernardo Braga Perobeli** — RM 562468
 
+- **Repositório Oficial no GitHub:** https://github.com/luccamasini-AI/citizentech-visao-computacional
+- **Vídeo de Demonstração (YouTube):** https://youtu.be/91xrAAOsBxQ
+
 ---
 
 ## 1. Contextualização e Escopo Técnico

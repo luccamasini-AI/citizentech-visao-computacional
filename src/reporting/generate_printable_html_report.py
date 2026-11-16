@@ -294,6 +294,20 @@ def generate_printable_html_report(workspace_root: Path) -> Path:
             color: var(--muted);
             font-weight: 500;
         }}
+        .project-links {{
+            margin-top: 4px;
+            padding-top: 4px;
+            border-top: 1px dashed #cbd5e1;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            font-size: 8.5pt;
+        }}
+        .project-links a {{
+            color: var(--accent);
+            text-decoration: none;
+            font-weight: 600;
+        }}
         h2 {{
             font-size: 11pt;
             color: var(--primary);
@@ -389,7 +403,7 @@ def generate_printable_html_report(workspace_root: Path) -> Path:
         }}
         .figure-img-primary {{
             max-width: 100%;
-            height: 168px;
+            height: 152px;
             width: auto;
             object-fit: contain;
             display: block;
@@ -480,6 +494,10 @@ def generate_printable_html_report(workspace_root: Path) -> Path:
                     <div class="author-item">1) Lucca Phelipe Masini <span class="author-rm">(RM 564121)</span></div>
                     <div class="author-item">2) Igor Paixão Sarak <span class="author-rm">(RM 563726)</span></div>
                     <div class="author-item">3) Bernardo Braga Perobeli <span class="author-rm">(RM 562468)</span></div>
+                </div>
+                <div class="project-links">
+                    <div><strong>Repositório GitHub:</strong> <a href="https://github.com/luccamasini-AI/citizentech-visao-computacional" target="_blank">https://github.com/luccamasini-AI/citizentech-visao-computacional</a></div>
+                    <div><strong>Vídeo de Demonstração (YouTube):</strong> <a href="https://youtu.be/91xrAAOsBxQ" target="_blank">https://youtu.be/91xrAAOsBxQ</a></div>
                 </div>
             </div>
         </header>
