@@ -32,7 +32,7 @@ A identificação precoce de fissuras visíveis em estruturas de concreto (ponte
 .
 ├── app_citizentech.py                      # Aplicação interativa do protótipo CitizenTech (Streamlit)
 ├── GS_FRONT.ipynb                          # Notebook executado (Preparação, Treinamento, Avaliação e Benchmark)
-├── relatorio_tecnico_citizentech.html      # Relatório Técnico formatado para impressão A4 / exportação PDF
+├── Relatório Técnico — Visão Computacional para Manutenção Urbana (CitizenTech).pdf # Relatório Técnico A4
 ├── Iniciar_CitizenTech.bat                 # Inicializador automatizado da aplicação para Windows
 ├── requirements.txt                        # Dependências de execução do ambiente local
 ├── artifacts/
@@ -116,6 +116,6 @@ streamlit run app_citizentech.py
 
 ---
 
-## 6. Relatório Técnico Imprimível (A4 / PDF)
+## 6. Relatório Técnico (PDF)
 
-O relatório técnico consolidado encontra-se no arquivo `relatorio_tecnico_citizentech.html`. Para exportá-lo em PDF, abra o arquivo em qualquer navegador web e utilize o botão de impressão no topo da página (ou pressione `Ctrl + P` selecionando **Salvar como PDF**).
+O relatório técnico consolidado encontra-se na raiz do projeto no arquivo `Relatório Técnico — Visão Computacional para Manutenção Urbana (CitizenTech).pdf`, contendo as métricas de avaliação, análise crítica dos erros, benchmark de latência/FPS e justificativa técnica das escolhas arquiteturais.
