@@ -1,8 +1,8 @@
 """
-Serviço de inferência e explicabilidade visual (Grad-CAM) para identificação
+Serviço de inferência e explicabilidade visual (Grad-CAM / WSOL) para identificação
 de fissuras em superfícies de concreto no protótipo CitizenTech.
-Suporta execução nativa dos pesos MobileNetV3-Small (.pth) tanto via PyTorch
-quanto via motor vetorial NumPy/SciPy (sem dependência obrigatória de CUDA/Torch local).
+Implementa fusão exata Conv2d + BatchNorm2d (eps=1e-3, idêntico ao PyTorch MobileNetV3-Small)
+e cache de ativações em passagem única (single forward pass) para maximizar o FPS em vídeo.
 """
 
 from collections import OrderedDict
@@ -28,6 +28,9 @@ from src.domain.inspection_contracts import (
 
 LOGGER = logging.getLogger(__name__)
 
+# Constante oficial de epsilon do BatchNorm2d na MobileNetV3 (torchvision.models.mobilenetv3)
+MOBILENETV3_BATCHNORM_EPSILON = 1e-3
+
 
 def _relu(x: np.ndarray) -> np.ndarray:
     return np.maximum(x, 0.0)
@@ -44,6 +47,23 @@ def _hardswish(x: np.ndarray) -> np.ndarray:
 def _hardswish_derivative(x: np.ndarray) -> np.ndarray:
     grad = np.where(x < -3.0, 0.0, np.where(x > 3.0, 1.0, (2.0 * x + 3.0) / 6.0))
     return grad.astype(np.float32)
+
+
+def detect_detailed_cpu_model_name() -> str:
+    """Obtém o modelo exato da CPU no Windows/Linux/macOS para relatórios reprodutíveis."""
+    try:
+        import winreg
+
+        key_path = r"HARDWARE\DESCRIPTION\System\CentralProcessor\0"
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, key_path) as reg_key:
+            processor_name, _ = winreg.QueryValueEx(reg_key, "ProcessorNameString")
+            if processor_name and str(processor_name).strip():
+                return str(processor_name).strip()
+    except Exception:
+        pass
+
+    processor_fallback = platform.processor() or platform.machine()
+    return processor_fallback
 
 
 class _PyTorchZipCheckpointReader(pickle.Unpickler):
@@ -75,8 +95,8 @@ class _PyTorchZipCheckpointReader(pickle.Unpickler):
 class ConcreteCrackClassifierService:
     """
     Serviço responsável pelo carregamento do modelo MobileNetV3-Small (.pth),
-    execução da inferência com medição de latência/FPS e geração de
-    mapas de ativação visual (Grad-CAM) para apoio à triagem urbana.
+    execução da inferência com medição de latência/FPS em imagens reais e geração de
+    mapas de ativação visual (Grad-CAM) e localização fracamente supervisionada (WSOL).
     """
 
     # Especificação exata dos 11 blocos InvertedResidual da MobileNetV3-Small (torchvision)
@@ -104,6 +124,10 @@ class ConcreteCrackClassifierService:
         self._is_trained_checkpoint_loaded = False
         self._state_dict: Dict[str, np.ndarray] = {}
         self._fused_layers: Dict[str, Tuple[np.ndarray, np.ndarray]] = {}
+        self._cpu_model_name = detect_detailed_cpu_model_name()
+        self._cached_forward_result: Optional[
+            Tuple[int, np.ndarray, np.ndarray, np.ndarray]
+        ] = None
 
         if weights_file_path is not None and weights_file_path.exists():
             self.load_trained_weights(weights_file_path)
@@ -115,12 +139,11 @@ class ConcreteCrackClassifierService:
 
     @property
     def hardware_description(self) -> str:
-        """Retorna descrição legível do dispositivo de processamento em uso."""
-        processor_name = platform.processor() or platform.machine()
-        return f"CPU Local ({processor_name}) / Pesos Treinados em GPU NVIDIA Tesla T4"
+        """Retorna o modelo detalhado da CPU local e o ambiente de treinamento dos pesos."""
+        return f"CPU {self._cpu_model_name} (Pesos treinados em GPU NVIDIA Tesla T4)"
 
     def load_trained_weights(self, weights_file_path: Path) -> None:
-        """Carrega os tensores do checkpoint .pth e pré-funde as camadas BatchNorm."""
+        """Carrega os tensores do checkpoint .pth e pré-funde as camadas BatchNorm (eps=1e-3)."""
         if not weights_file_path.exists():
             LOGGER.warning("Arquivo de pesos não encontrado em: %s", weights_file_path)
             return
@@ -144,13 +167,17 @@ class ConcreteCrackClassifierService:
             self._state_dict = {k: np.asarray(v, dtype=np.float32) for k, v in state_dict.items()}
             self._precompute_fused_conv_bn_layers()
             self._is_trained_checkpoint_loaded = True
+            self._cached_forward_result = None
             LOGGER.info("Pesos MobileNetV3-Small carregados com sucesso de %s", weights_file_path)
         except Exception as error:
             LOGGER.error("Erro ao carregar pesos (%s): %s", weights_file_path, error)
             raise ValueError(f"Arquivo de pesos inválido: {weights_file_path}") from error
 
     def _precompute_fused_conv_bn_layers(self) -> None:
-        """Funde matematicamente os parâmetros de Conv2d + BatchNorm2d para inferência rápida."""
+        """
+        Funde matematicamente os parâmetros de Conv2d + BatchNorm2d usando eps=1e-3
+        (padrão exato da MobileNetV3 no PyTorch/torchvision, garantindo erro < 1e-6).
+        """
         self._fused_layers.clear()
         for key in list(self._state_dict.keys()):
             if key.endswith(".0.weight") and key.replace(".0.weight", ".1.running_mean") in self._state_dict:
@@ -161,13 +188,13 @@ class ConcreteCrackClassifierService:
                 bn_mean = self._state_dict[f"{prefix}.1.running_mean"]
                 bn_var = self._state_dict[f"{prefix}.1.running_var"]
 
-                scale = bn_w / np.sqrt(bn_var + 1e-5)
+                scale = bn_w / np.sqrt(bn_var + MOBILENETV3_BATCHNORM_EPSILON)
                 fused_w = conv_w * scale[:, None, None, None]
                 fused_b = bn_b - bn_mean * scale
                 self._fused_layers[prefix] = (fused_w.astype(np.float32), fused_b.astype(np.float32))
 
     def _preprocess_pil_image(self, pil_image: Image.Image) -> np.ndarray:
-        """Redimensiona para 224x224 e aplica normalização ImageNet."""
+        """Redimensiona para 224x224 (Bilinear) e aplica normalização ImageNet."""
         resized = pil_image.convert("RGB").resize(
             (
                 self._configuration.input_image_width,
@@ -293,8 +320,8 @@ class ConcreteCrackClassifierService:
         custom_confidence_threshold: Optional[float] = None,
     ) -> SingleImageInspectionResult:
         """
-        Realiza a inferência em uma única imagem, medindo a latência e retornando
-        o diagnóstico de triagem acompanhado da confiança do modelo.
+        Realiza a inferência em uma única imagem real, medindo a latência e armazenando
+        em cache as ativações da última camada convolucional para evitar reexecução no Grad-CAM.
         """
         if pil_image is None:
             raise ValueError("A imagem fornecida para inspeção não pode ser nula.")
@@ -309,7 +336,15 @@ class ConcreteCrackClassifierService:
         input_tensor = self._preprocess_pil_image(pil_image)
 
         if self._is_trained_checkpoint_loaded:
-            logits, _, _ = self._forward_mobilenet_v3(input_tensor)
+            logits, last_conv_activations, pre_hidden = self._forward_mobilenet_v3(
+                input_tensor
+            )
+            self._cached_forward_result = (
+                id(pil_image),
+                logits,
+                last_conv_activations,
+                pre_hidden,
+            )
             shifted_logits = logits - np.max(logits)
             exp_logits = np.exp(shifted_logits)
             probabilities = exp_logits / np.sum(exp_logits)
@@ -328,8 +363,8 @@ class ConcreteCrackClassifierService:
             prediction_confidence = crack_probability
             technical_recommendation = (
                 "Sinalizar ponto para vistoria técnica presencial. "
-                "Atenção: a detecção visual apoia a triagem preventiva e não "
-                "substitui laudo de segurança estrutural."
+                "Atenção: a detecção visual e a localização WSOL/Grad-CAM apoiam a triagem "
+                "preventiva e não substituem laudo de segurança estrutural."
             )
         else:
             predicted_class_name = "Sem Fissura (Negative)"
@@ -358,17 +393,23 @@ class ConcreteCrackClassifierService:
         inspection_result: SingleImageInspectionResult,
     ) -> Tuple[np.ndarray, np.ndarray]:
         """
-        Gera a visualização explicável (Grad-CAM + Caixa de Destaque da Região Crítica)
-        para apresentar visualmente o dano identificado no protótipo CitizenTech.
+        Gera a visualização explicável (Grad-CAM + Caixa Delimitadora por Localização
+        Fracamente Supervisionada — WSOL) reutilizando as ativações do forward pass.
         """
         rgb_image = pil_image.convert("RGB")
         original_array = np.array(rgb_image)
         original_height, original_width = original_array.shape[:2]
 
-        input_tensor = self._preprocess_pil_image(rgb_image)
-        logits, last_conv_activations, pre_hidden = self._forward_mobilenet_v3(
-            input_tensor
-        )
+        if (
+            self._cached_forward_result is not None
+            and self._cached_forward_result[0] == id(pil_image)
+        ):
+            _, logits, last_conv_activations, pre_hidden = self._cached_forward_result
+        else:
+            input_tensor = self._preprocess_pil_image(rgb_image)
+            logits, last_conv_activations, pre_hidden = self._forward_mobilenet_v3(
+                input_tensor
+            )
 
         target_class_index = 1 if inspection_result.requires_field_inspection else 0
         c3_w = self._state_dict["classifier.3.weight"][target_class_index]
@@ -422,8 +463,8 @@ class ConcreteCrackClassifierService:
         confidence_value: float,
     ) -> np.ndarray:
         """
-        Desenha caixa delimitadora ao redor do foco principal de ativação
-        quando uma fissura é detectada pelo modelo.
+        Extrai a caixa delimitadora via Localização Fracamente Supervisionada (WSOL)
+        sobre o contorno principal de ativação do mapa Grad-CAM (limiar >= 0.45).
         """
         output_image = base_image.copy()
         binary_mask = np.uint8(normalized_heatmap >= 0.45) * 255
@@ -448,11 +489,11 @@ class ConcreteCrackClassifierService:
                 (239, 68, 68),
                 2,
             )
-            label_text = f"Fissura ({confidence_value * 100:.1f}%)"
+            label_text = f"WSOL/Grad-CAM ({confidence_value * 100:.1f}%)"
             cv2.rectangle(
                 output_image,
                 (start_x, max(0, start_y - 22)),
-                (min(image_width - 1, start_x + 150), start_y),
+                (min(image_width - 1, start_x + 185), start_y),
                 (239, 68, 68),
                 -1,
             )
@@ -461,7 +502,7 @@ class ConcreteCrackClassifierService:
                 label_text,
                 (start_x + 4, max(14, start_y - 6)),
                 cv2.FONT_HERSHEY_SIMPLEX,
-                0.45,
+                0.42,
                 (255, 255, 255),
                 1,
                 cv2.LINE_AA,

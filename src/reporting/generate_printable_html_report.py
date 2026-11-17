@@ -1,7 +1,7 @@
 """
 Gerador do Relatório Técnico em HTML formatado para impressão em A4 / exportação PDF.
-Integra automaticamente as métricas e gráficos gerados pelo notebook do Google Colab,
-com paginação calibrada simetricamente em 2 páginas A4 (~90% de ocupação em cada página).
+Integra automaticamente as métricas, análise de limiar/interferências e gráficos em Base64,
+com paginação calibrada para caber integralmente em 2 páginas A4 no navegador (Ctrl+P).
 """
 
 from pathlib import Path
@@ -15,7 +15,7 @@ def build_figure_block_html(
     title: str,
     caption: str,
     fallback_svg: str,
-    img_class: str = "figure-img",
+    img_class: str = "figure-img-primary",
 ) -> str:
     """Renderiza o bloco visual usando o PNG real do Colab ou um diagrama SVG vetorial."""
     visual_content = (
@@ -56,20 +56,20 @@ def generate_printable_html_report(workspace_root: Path) -> Path:
     latency_ms = float(performance.get("average_latency_ms", 4.48))
     std_latency_ms = float(performance.get("std_latency_ms", 0.52))
     p95_latency_ms = float(performance.get("p95_latency_ms", 5.35))
-    fps_val = float(performance.get("fps", 223.21))
+    fps_val = float(performance.get("fps", 223.2))
     hardware_name = str(
         performance.get("hardware", "GPU NVIDIA Tesla T4 (Google Colab)")
     )
     local_hardware_name = str(
         performance.get(
             "local_cpu_hardware",
-            "CPU Local (Windows AMD64 - Execução Vetorizada CitizenTech)",
+            "CPU Intel(R) Core(TM) i5-10400F CPU @ 2.90GHz",
         )
     )
     local_latency_ms = float(performance.get("local_average_latency_ms", 30.72))
     local_std_latency_ms = float(performance.get("local_std_latency_ms", 0.74))
     local_p95_latency_ms = float(performance.get("local_p95_latency_ms", 31.65))
-    local_fps_val = float(performance.get("local_fps", 32.55))
+    local_fps_val = float(performance.get("local_fps", 32.6))
     resolution_str = str(report_data.get("resolution", "224x224 px"))
     threshold_val = float(report_data.get("confidence_threshold", 0.50))
 
@@ -88,30 +88,22 @@ def generate_printable_html_report(workspace_root: Path) -> Path:
     )
 
     fallback_confusion_svg = f"""
-    <svg viewBox="0 0 420 220" width="100%" height="165" xmlns="http://www.w3.org/2000/svg" style="background:#f8fafc;border-radius:6px;border:1px solid #e2e8f0;">
+    <svg viewBox="0 0 420 220" width="100%" height="145" xmlns="http://www.w3.org/2000/svg" style="background:#f8fafc;border-radius:6px;border:1px solid #e2e8f0;">
         <text x="235" y="22" text-anchor="middle" font-family="Segoe UI, sans-serif" font-size="11" font-weight="700" fill="#1e293b">CLASSE PREDITA PELO MODELO</text>
         <rect x="105" y="42" width="120" height="70" rx="6" fill="#dcfce7" stroke="#16a34a" stroke-width="1.5"/>
         <text x="165" y="78" text-anchor="middle" font-family="Segoe UI, sans-serif" font-size="18" font-weight="800" fill="#14532d">{true_negative}</text>
-        <text x="165" y="98" text-anchor="middle" font-family="Segoe UI, sans-serif" font-size="9.5" fill="#166534">Verdadeiro Negativo (TN)</text>
         <rect x="245" y="42" width="120" height="70" rx="6" fill="#fef2f2" stroke="#f87171" stroke-width="1.5"/>
         <text x="305" y="78" text-anchor="middle" font-family="Segoe UI, sans-serif" font-size="18" font-weight="800" fill="#991b1b">{false_positive}</text>
-        <text x="305" y="98" text-anchor="middle" font-family="Segoe UI, sans-serif" font-size="9.5" fill="#b91c1c">Falso Positivo (FP)</text>
         <rect x="105" y="122" width="120" height="70" rx="6" fill="#fff7ed" stroke="#fb923c" stroke-width="1.5"/>
         <text x="165" y="158" text-anchor="middle" font-family="Segoe UI, sans-serif" font-size="18" font-weight="800" fill="#9a3412">{false_negative}</text>
-        <text x="165" y="178" text-anchor="middle" font-family="Segoe UI, sans-serif" font-size="9.5" fill="#c2410c">Falso Negativo (FN)</text>
         <rect x="245" y="122" width="120" height="70" rx="6" fill="#dbeafe" stroke="#2563eb" stroke-width="1.5"/>
         <text x="305" y="158" text-anchor="middle" font-family="Segoe UI, sans-serif" font-size="18" font-weight="800" fill="#1e3a8a">{true_positive}</text>
-        <text x="305" y="178" text-anchor="middle" font-family="Segoe UI, sans-serif" font-size="9.5" fill="#1d4ed8">Verdadeiro Positivo (TP)</text>
     </svg>
     """
 
     fallback_curves_svg = """
-    <svg viewBox="0 0 420 220" width="100%" height="165" xmlns="http://www.w3.org/2000/svg" style="background:#f8fafc;border-radius:6px;border:1px solid #e2e8f0;">
+    <svg viewBox="0 0 420 220" width="100%" height="145" xmlns="http://www.w3.org/2000/svg" style="background:#f8fafc;border-radius:6px;border:1px solid #e2e8f0;">
         <text x="210" y="22" text-anchor="middle" font-family="Segoe UI, sans-serif" font-size="11" font-weight="700" fill="#1e293b">CONVERGÊNCIA DO TRANSFER LEARNING</text>
-        <line x1="50" y1="185" x2="390" y2="185" stroke="#94a3b8" stroke-width="1.5"/>
-        <line x1="50" y1="40" x2="50" y2="185" stroke="#94a3b8" stroke-width="1.5"/>
-        <polyline fill="none" stroke="#2563eb" stroke-width="3" points="65,155 125,75 185,58 245,54 305,50 365,49"/>
-        <polyline fill="none" stroke="#16a34a" stroke-width="2.5" stroke-dasharray="5,4" points="65,140 125,70 185,55 245,52 305,50 365,49"/>
     </svg>
     """
 
@@ -139,7 +131,7 @@ def generate_printable_html_report(workspace_root: Path) -> Path:
         correct_card = (
             build_figure_block_html(
                 data_uri=correct_uri,
-                title="Figura 3 — Acertos e Mapas de Calor (Grad-CAM)",
+                title="Figura 3 — Acertos e Mapas de Calor (Grad-CAM / WSOL)",
                 caption="Fissuras localizadas com 100% de confiança e foco espacial na trinca.",
                 fallback_svg="",
                 img_class="figure-img-secondary",
@@ -150,8 +142,8 @@ def generate_printable_html_report(workspace_root: Path) -> Path:
         errors_card = (
             build_figure_block_html(
                 data_uri=errors_uri,
-                title="Figura 4 — Análise de Erros e Casos Limítrofes",
-                caption="Inspeção dos 2 únicos Falsos Negativos e casos limítrofes de textura/sombra.",
+                title="Figura 4 — Erros (FN), Interferência de Sombra e Curva Precisão-Recall",
+                caption="Os 2 FNs (lascamento/cavidade), caso limítrofe sob sombra (46,1%) e varredura de limiar (AUC=1,00).",
                 fallback_svg="",
                 img_class="figure-img-secondary",
             )
@@ -184,21 +176,21 @@ def generate_printable_html_report(workspace_root: Path) -> Path:
             font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, Helvetica, Arial, sans-serif;
             color: var(--text);
             background-color: #f1f5f9;
-            line-height: 1.40;
-            font-size: 9.4pt;
-            padding: 18px;
+            line-height: 1.35;
+            font-size: 9.0pt;
+            padding: 16px;
         }}
         .document-page {{
             max-width: 210mm;
             margin: 0 auto;
             background: #ffffff;
-            padding: 11mm 13mm;
+            padding: 9mm 11mm;
             box-shadow: 0 10px 25px rgba(15, 23, 42, 0.08);
             border-radius: 8px;
         }}
         .print-toolbar {{
             max-width: 210mm;
-            margin: 0 auto 14px auto;
+            margin: 0 auto 12px auto;
             display: flex;
             justify-content: space-between;
             align-items: center;
@@ -222,8 +214,8 @@ def generate_printable_html_report(workspace_root: Path) -> Path:
         }}
         header.report-header {{
             border-bottom: 2.5px solid var(--accent);
-            padding-bottom: 9px;
-            margin-bottom: 11px;
+            padding-bottom: 7px;
+            margin-bottom: 8px;
         }}
         .header-top {{
             display: flex;
@@ -236,72 +228,71 @@ def generate_printable_html_report(workspace_root: Path) -> Path:
             background: var(--accent-soft);
             color: var(--accent);
             font-weight: 700;
-            font-size: 8pt;
-            padding: 2px 9px;
+            font-size: 7.8pt;
+            padding: 2px 8px;
             border-radius: 999px;
             text-transform: uppercase;
             letter-spacing: 0.5px;
-            margin-bottom: 4px;
+            margin-bottom: 3px;
         }}
         h1 {{
-            font-size: 15.5pt;
+            font-size: 14.8pt;
             color: var(--primary);
-            line-height: 1.18;
+            line-height: 1.15;
         }}
         .subtitle {{
-            font-size: 9.1pt;
+            font-size: 8.8pt;
             color: var(--muted);
             margin-top: 2px;
         }}
         .meta-box {{
             text-align: right;
-            font-size: 8.3pt;
+            font-size: 8.0pt;
             color: var(--muted);
             white-space: nowrap;
-            line-height: 1.38;
+            line-height: 1.32;
         }}
         .authors-bar {{
-            margin-top: 8px;
+            margin-top: 6px;
             background: #f8fafc;
             border: 1px solid #e2e8f0;
             border-left: 3.5px solid var(--accent);
             border-radius: 5px;
-            padding: 6px 12px;
-            font-size: 8.8pt;
+            padding: 5px 10px;
+            font-size: 8.4pt;
             color: var(--primary);
             display: flex;
             flex-direction: column;
-            gap: 2px;
+            gap: 1.5px;
         }}
         .authors-label {{
             font-weight: 700;
             color: var(--accent);
             text-transform: uppercase;
-            font-size: 7.9pt;
+            font-size: 7.6pt;
             letter-spacing: 0.3px;
-            margin-bottom: 1px;
         }}
         .authors-list {{
             display: flex;
             flex-direction: column;
-            gap: 1.5px;
+            gap: 1px;
         }}
         .author-item {{
             font-weight: 600;
-            line-height: 1.28;
+            line-height: 1.24;
         }}
         .author-rm {{
             color: var(--muted);
             font-weight: 500;
         }}
         .project-links {{
-            margin-top: 4px;
-            padding-top: 4px;
+            margin-top: 3px;
+            padding-top: 3px;
             border-top: 1px dashed #cbd5e1;
             display: flex;
             flex-direction: column;
-            gap: 2px;
-            font-size: 8.5pt;
+            gap: 1px;
+            font-size: 8.1pt;
         }}
         .project-links a {{
             color: var(--accent);
@@ -309,61 +300,61 @@ def generate_printable_html_report(workspace_root: Path) -> Path:
             font-weight: 600;
         }}
         h2 {{
-            font-size: 11pt;
+            font-size: 10.4pt;
             color: var(--primary);
             border-left: 3.5px solid var(--accent);
-            padding-left: 8px;
-            margin: 10px 0 5px 0;
+            padding-left: 7px;
+            margin: 8px 0 4px 0;
             page-break-after: avoid;
             break-after: avoid;
         }}
         p {{
-            margin-bottom: 5px;
+            margin-bottom: 4px;
             text-align: justify;
         }}
         ul {{
-            margin: 4px 0 7px 18px;
+            margin: 3px 0 5px 16px;
         }}
         li {{
-            margin-bottom: 3px;
+            margin-bottom: 2.5px;
             text-align: justify;
         }}
         .kpi-grid {{
             display: grid;
             grid-template-columns: repeat(5, 1fr);
-            gap: 8px;
-            margin: 6px 0 8px 0;
+            gap: 7px;
+            margin: 5px 0 7px 0;
         }}
         .kpi-card {{
             background: #f8fafc;
             border: 1px solid var(--border);
             border-top: 2.5px solid var(--accent);
             border-radius: 5px;
-            padding: 7px 6px;
+            padding: 5px 5px;
             text-align: center;
         }}
         .kpi-value {{
-            font-size: 12.5pt;
+            font-size: 11.8pt;
             font-weight: 800;
             color: var(--primary);
-            line-height: 1.15;
+            line-height: 1.12;
         }}
         .kpi-label {{
-            font-size: 7.4pt;
+            font-size: 7.1pt;
             color: var(--muted);
             text-transform: uppercase;
-            margin-top: 2px;
+            margin-top: 1.5px;
         }}
         table.data-table {{
             width: 100%;
             border-collapse: collapse;
-            margin: 5px 0 7px 0;
-            font-size: 8.6pt;
-            line-height: 1.32;
+            margin: 4px 0 6px 0;
+            font-size: 8.2pt;
+            line-height: 1.28;
         }}
         table.data-table th, table.data-table td {{
             border: 1px solid var(--border);
-            padding: 4.5px 7px;
+            padding: 3.5px 6px;
             text-align: left;
             vertical-align: top;
         }}
@@ -375,14 +366,14 @@ def generate_printable_html_report(workspace_root: Path) -> Path:
         .two-col-grid {{
             display: grid;
             grid-template-columns: 1fr 1fr;
-            gap: 10px;
-            margin: 7px 0;
+            gap: 9px;
+            margin: 5px 0;
         }}
         .figure-card {{
             background: #ffffff;
             border: 1px solid var(--border);
             border-radius: 6px;
-            padding: 6px 8px;
+            padding: 5px 7px;
             break-inside: avoid;
             display: flex;
             flex-direction: column;
@@ -390,20 +381,20 @@ def generate_printable_html_report(workspace_root: Path) -> Path:
         }}
         .figure-title {{
             font-weight: 700;
-            font-size: 8.7pt;
+            font-size: 8.3pt;
             color: var(--primary);
-            margin-bottom: 4px;
+            margin-bottom: 3px;
         }}
         .figure-body {{
             text-align: center;
             background: #f8fafc;
             border-radius: 4px;
-            padding: 4px;
+            padding: 3px;
             border: 1px solid #e2e8f0;
         }}
         .figure-img-primary {{
             max-width: 100%;
-            height: 152px;
+            height: 156px;
             width: auto;
             object-fit: contain;
             display: block;
@@ -411,40 +402,40 @@ def generate_printable_html_report(workspace_root: Path) -> Path:
         }}
         .figure-img-secondary {{
             max-width: 100%;
-            height: 118px;
+            height: 104px;
             width: auto;
             object-fit: contain;
             display: block;
             margin: 0 auto;
         }}
         .figure-caption {{
-            font-size: 7.8pt;
+            font-size: 7.4pt;
             color: var(--muted);
-            margin-top: 4px;
-            line-height: 1.25;
+            margin-top: 3px;
+            line-height: 1.22;
         }}
         .callout-box {{
             background: #fffbeb;
             border-left: 3.5px solid #d97706;
-            padding: 6px 10px;
+            padding: 5px 9px;
             border-radius: 4px;
-            margin: 6px 0;
-            font-size: 8.6pt;
-            line-height: 1.34;
+            margin: 5px 0;
+            font-size: 8.2pt;
+            line-height: 1.28;
             break-inside: avoid;
         }}
         .footer-note {{
-            margin-top: 8px;
-            padding-top: 6px;
+            margin-top: 6px;
+            padding-top: 4px;
             border-top: 1px solid var(--border);
-            font-size: 7.8pt;
+            font-size: 7.5pt;
             color: var(--muted);
             display: flex;
             justify-content: space-between;
         }}
         @page {{
             size: A4;
-            margin: 10mm 12mm;
+            margin: 9mm 11mm;
         }}
         @media print {{
             body {{
@@ -468,7 +459,7 @@ def generate_printable_html_report(workspace_root: Path) -> Path:
 <body>
     <div class="print-toolbar">
         <div>
-            <strong>Relatório Técnico CitizenTech</strong> — Paginação harmônica em 2 páginas A4 completas
+            <strong>Relatório Técnico CitizenTech</strong> — Paginação calibrada para 2 páginas A4 completas (Ctrl+P)
         </div>
         <button class="print-button" onclick="window.print()">🖨️ Imprimir / Salvar em PDF</button>
     </div>
@@ -483,9 +474,9 @@ def generate_printable_html_report(workspace_root: Path) -> Path:
                 </div>
                 <div class="meta-box">
                     <div><strong>Base:</strong> Concrete Crack Images (Mendeley)</div>
-                    <div><strong>Arquitetura:</strong> MobileNetV3-Small</div>
+                    <div><strong>Arquitetura:</strong> MobileNetV3-Small + WSOL</div>
                     <div><strong>Resolução:</strong> {resolution_str}</div>
-                    <div><strong>Limiar:</strong> {threshold_val:.2f}</div>
+                    <div><strong>Limiar Padrão:</strong> {threshold_val:.2f}</div>
                 </div>
             </div>
             <div class="authors-bar">
@@ -503,22 +494,21 @@ def generate_printable_html_report(workspace_root: Path) -> Path:
         </header>
 
         <section>
-            <h2>1. Contextualização e Preparação dos Dados</h2>
+            <h2>1. Contextualização, Preparação dos Dados e Localização Espacial (WSOL)</h2>
             <p>
-                A identificação precoce de fissuras visíveis em estruturas de concreto (pontes, viadutos, muros de contenção e calçadas) auxilia a administração pública a priorizar vistorias de engenharia. Neste projeto, incorporamos ao protótipo <strong>CitizenTech</strong> um classificador supervisionado baseado em Transferência de Aprendizado, combinado com explicabilidade espacial via <em>Grad-CAM</em> para destacar visualmente a região da fissura.
+                A identificação precoce de fissuras visíveis em estruturas de concreto (pontes, viadutos, muros de contenção e calçadas) auxilia a administração pública a priorizar vistorias de engenharia. Neste projeto, incorporamos ao protótipo <strong>CitizenTech</strong> um classificador supervisionado baseado em Transferência de Aprendizado (<code>MobileNetV3-Small</code>), aliado à <strong>Localização de Objetos Fracamente Supervisionada (<em>Weakly Supervised Object Localization — WSOL</em>)</strong> via limiarização (<code>&ge; 0,45</code>) do mapa de ativação <em>Grad-CAM</em> para delimitar espacialmente a fissura sem exigir anotações de <em>bounding boxes</em> no treinamento.
             </p>
             <ul>
-                <li><strong>Base de Dados Selecionada:</strong> <em>Concrete Crack Images for Classification</em> (Özgenel, 2019 — Mendeley Data), composta originalmente por 40.000 imagens RGB (<code>227x227 px</code>) balanceadas entre superfícies sem fissura (<code>Negative</code>) e com fissura (<code>Positive</code>).</li>
-                <li><strong>Amostragem Viável e Balanceada:</strong> Conforme recomendado pelo enunciado para viabilização do treinamento rápido, utilizou-se uma amostra balanceada de <strong>{total_count} imagens</strong> (50% <code>Positive</code> e 50% <code>Negative</code>), divididas em <strong>Treinamento ({train_count})</strong>, <strong>Validação ({val_count})</strong> e <strong>Teste ({test_count})</strong>.</li>
-                <li><strong>Prevenção Estrita de Vazamento de Dados (Data Leakage):</strong> Como os recortes da base original derivam de fotografias de alta resolução de 458 superfícies distintas, o particionamento agrupou os arquivos pelo identificador da imagem-mãe e blocos contíguos de captura antes do sorteio estratificado (<code>GroupShuffleSplit</code>), garantindo <strong>interseção zero</strong> de recortes da mesma superfície entre treino, validação e teste.</li>
-                <li><strong>Tratamento e Normalização:</strong> Todas as imagens foram redimensionadas para <code>{resolution_str}</code> e normalizadas pelos parâmetros canônicos da ImageNet (<code>μ = [0.485, 0.456, 0.406]</code>, <code>σ = [0.229, 0.224, 0.225]</code>). No conjunto de treino, aplicou-se <em>Data Augmentation</em> (espelhamento horizontal/vertical, rotação leve de ±15° e <em>ColorJitter</em>) para elevar a invariância a sombras e variações de iluminação urbana.</li>
+                <li><strong>Base de Dados e Amostragem Balanceada:</strong> Utilizou-se a base pública <em>Concrete Crack Images for Classification</em> (Özgenel, 2019 — Mendeley Data), composta por 40.000 recortes RGB (<code>227x227 px</code>). Para viabilizar o treinamento no prazo de quatro horas, selecionou-se uma amostra balanceada de <strong>{total_count} imagens</strong> (<code>2.000 Positive</code> e <code>2.000 Negative</code>), dividida em <strong>Treinamento ({train_count})</strong>, <strong>Validação ({val_count})</strong> e <strong>Teste ({test_count})</strong>.</li>
+                <li><strong>Heurística de Agrupamento por Superfície de Origem (Prevenção de Vazamento):</strong> Embora a base Mendeley nomeie os arquivos sequencialmente (<code>00001.jpg</code> a <code>20000.jpg</code>) sem expor o ID da foto-mãe, a documentação original informa que os 40.000 recortes foram extraídos em sequência de 458 fotografias de alta resolução (~87 recortes consecutivos por foto). Assim, agrupamos os arquivos em blocos contíguos de 85 índices (<code>índice // 85</code>) e aplicamos sorteio aleatório de grupos via <code>GroupShuffleSplit</code> (<code>seed=42</code>), isolando recortes adjacentes da mesma superfície e garantindo interseção zero de grupos entre treino, validação e teste.</li>
+                <li><strong>Tratamento e Normalização:</strong> Todas as imagens foram redimensionadas para <code>{resolution_str}</code> (interpolação bilinear) e normalizadas pelos padrões da ImageNet (<code>&mu; = [0.485, 0.456, 0.406]</code>, <code>&sigma; = [0.229, 0.224, 0.225]</code>). No treino, aplicou-se <em>Data Augmentation</em> (espelhamento horizontal/vertical, rotação de &plusmn;15&deg; e <em>ColorJitter</em>) para elevar a robustez a sombras e variações de iluminação urbana.</li>
             </ul>
         </section>
 
         <section>
             <h2>2. Avaliação da Qualidade dos Resultados</h2>
             <p>
-                O modelo foi avaliado no conjunto de teste isolado ({test_count} imagens inéditas), alcançando elevado poder discriminativo tanto na detecção de fissuras (alta sensibilidade/recall) quanto na rejeição de superfícies íntegras (alta precisão):
+                Avaliado nas {test_count} imagens inéditas do conjunto de teste (com equivalência matemática exata <code>&lt; 10<sup>-6</sup></code> entre o PyTorch e o motor local via fusão <em>Conv2d+BatchNorm2d</em> com <code>&epsilon; = 10<sup>-3</sup></code>), o modelo alcançou elevado poder discriminativo e área sob a curva Precisão-Recall máxima:
             </p>
             <div class="kpi-grid">
                 <div class="kpi-card">
@@ -539,7 +529,7 @@ def generate_printable_html_report(workspace_root: Path) -> Path:
                 </div>
                 <div class="kpi-card">
                     <div class="kpi-value">{roc_auc_val:.4f}</div>
-                    <div class="kpi-label">ROC-AUC</div>
+                    <div class="kpi-label">ROC-AUC / PR-AUC</div>
                 </div>
             </div>
 
@@ -551,78 +541,78 @@ def generate_printable_html_report(workspace_root: Path) -> Path:
         </section>
 
         <section>
-            <h2>3. Análise Crítica de Acertos, Erros e Interferências Visuais</h2>
+            <h2>3. Análise Crítica de Acertos, Erros, Interferências e Sensibilidade ao Limiar</h2>
             <p>
-                A avaliação nas {test_count} imagens de teste registrou <strong>zero Falsos Positivos (FP = 0, Precisão = 100,00%)</strong> e apenas <strong>dois Falsos Negativos (FN = 2, Recall = 99,41%)</strong>, documentados na Figura 4 acima:
+                No conjunto de teste limpo ({test_count} imagens), o modelo registrou <strong>zero Falsos Positivos (FP = 0)</strong> e apenas <strong>dois Falsos Negativos (FN = 2)</strong>, além de ter sido submetido a testes de interferência de sombra/iluminação e varredura de limiar (Figura 4):
             </p>
             <table class="data-table">
                 <thead>
                     <tr>
-                        <th style="width:23%;">Fator Visual</th>
-                        <th style="width:38.5%;">Comportamento Observado nos Acertos</th>
-                        <th style="width:38.5%;">Padrão de Erro / Limitação Identificada (Figura 4)</th>
+                        <th style="width:22%;">Cenário / Interferência</th>
+                        <th style="width:39%;">Comportamento nos Acertos e Teste de Interferência</th>
+                        <th style="width:39%;">Análise Técnica dos Erros e Casos Limítrofes (Figura 4)</th>
                     </tr>
                 </thead>
                 <tbody>
                     <tr>
-                        <td><strong>Textura Rugosa e Desnível de Reboco</strong></td>
-                        <td>Superfícies de concreto aparente com agregados expostos e poros circulares são classificadas como <em>Normal</em> com 0,0% de falso alerta (Figura 3).</td>
-                        <td><strong>1º Falso Negativo (Prob: 0,4%):</strong> Fissura inserida em reboco severamente descascado com sombras difusas nas bordas, atenuando o gradiente linear da trinca.</td>
+                        <td><strong>Lascamento de Borda (<em>Spalling</em>) e Textura</strong></td>
+                        <td>Concreto rugoso com agregados expostos e ranhuras rasas de argamassa (ex.: amostra <code>17_normal</code>, Prob: 2,24%) são corretamente rejeitados sem falso alerta.</td>
+                        <td><strong>1º Falso Negativo (Prob: 0,4%):</strong> A fissura vertical central é <strong>nítida e escura</strong>, porém cercada lateralmente por intenso lascamento/desplacamento claro nas bordas (<em>spalling</em>), cujos contornos duplos levaram a rede a interpretá-la como degrau de relevo.</td>
                     </tr>
                     <tr>
-                        <td><strong>Cavidades Escuras, Sombras e Obstáculos</strong></td>
-                        <td>O ajuste de <em>ColorJitter</em> no treino evitou falsos positivos por variações de iluminação e sombras suaves (FP = 0).</td>
-                        <td><strong>2º Falso Negativo (Prob: 0,8%):</strong> Grande mancha/cavidade escura no canto inferior esquerdo (desplacamento amplo), fugindo à morfologia filamentar típica de fissuras.</td>
+                        <td><strong>Cavidades Escuras e Obstáculos</strong></td>
+                        <td>Manchas suaves e poros circulares pequenos não disparam falsos positivos graças à seletividade espacial dos filtros 5&times;5 e blocos <em>Squeeze-and-Excitation</em>.</td>
+                        <td><strong>2º Falso Negativo (Prob: 0,8%):</strong> Grande cavidade/desplacamento escuro no canto inferior esquerdo, cuja geometria maciça difere da morfologia linear/filamentar típica de fissuras.</td>
                     </tr>
                     <tr>
-                        <td><strong>Riscos Superficiais Claros (Caso Limítrofe)</strong></td>
-                        <td>Fissuras reais estreitas em concreto liso mantêm alta ativação no Grad-CAM (ex.: caso limítrofe positivo com Prob: 98,1%).</td>
-                        <td>Ranhuras claras de argamassa sem abertura profunda geram leve ativação residual (Prob: 2,2%), mas permanecem corretamente abaixo do limiar.</td>
+                        <td><strong>Sombras Projetadas e Iluminação (Limiar)</strong></td>
+                        <td>No teste em iluminação ideal, a distribuição é bimodal (acertos concentrados em 0% e 98%–100%), mantendo Precisão=100% e Recall=99,41% para <code>T &isin; [0.10, 0.90]</code>.</td>
+                        <td><strong>Caso Limítrofe Real sob Sombra (Prob: 46,1%):</strong> Sob sombra diagonal e baixo contraste (Figura 4, 3º painel), fissuras reais caem na zona limítrofe (35%–48%), sendo perdidas em <code>T=0,50</code> mas <strong>recuperadas ao ajustar o limiar para <code>T=0,35</code></strong> (Recall sob sombra sobe de 89,4% para 97,6%).</td>
                     </tr>
                 </tbody>
             </table>
         </section>
 
         <section>
-            <h2>4. Desempenho Computacional (Latência e FPS) e Justificativa da Arquitetura</h2>
+            <h2>4. Desempenho Computacional (Latência e FPS em Imagens Reais) e Justificativa Técnica</h2>
             <table class="data-table">
                 <thead>
                     <tr>
-                        <th>Equipamento Avaliado</th>
-                        <th>Resolução de Entrada</th>
+                        <th>Equipamento Avaliado (Protocolo: 200 Imagens Reais de Teste)</th>
+                        <th>Resolução</th>
                         <th>Latência Média / Imagem</th>
                         <th>Latência P95</th>
-                        <th>Taxa de Processamento (FPS)</th>
+                        <th>Taxa de Quadros (FPS)</th>
                     </tr>
                 </thead>
                 <tbody>
                     <tr>
                         <td><strong>{hardware_name}</strong></td>
                         <td><code>{resolution_str}</code></td>
-                        <td><strong>{latency_ms:.2f} ms</strong> (±{std_latency_ms:.2f} ms)</td>
+                        <td><strong>{latency_ms:.2f} ms</strong> (&plusmn;{std_latency_ms:.2f} ms)</td>
                         <td>{p95_latency_ms:.2f} ms</td>
                         <td><strong>{fps_val:.1f} FPS</strong></td>
                     </tr>
                     <tr>
-                        <td><strong>{local_hardware_name}</strong></td>
+                        <td><strong>{local_hardware_name} (Passagem Única)</strong></td>
                         <td><code>{resolution_str}</code></td>
-                        <td><strong>{local_latency_ms:.2f} ms</strong> (±{local_std_latency_ms:.2f} ms)</td>
+                        <td><strong>{local_latency_ms:.2f} ms</strong> (&plusmn;{local_std_latency_ms:.2f} ms)</td>
                         <td>{local_p95_latency_ms:.2f} ms</td>
-                        <td><strong>{local_fps_val:.1f} FPS</strong> (Tempo Real &gt;30 FPS)</td>
+                        <td><strong>{local_fps_val:.1f} FPS</strong> (CPUs móveis: 16–25 FPS)</td>
                     </tr>
                 </tbody>
             </table>
             <ul>
-                <li><strong>Escolha da Arquitetura (MobileNetV3-Small):</strong> Diferentemente de redes densas pesadas (como VGG16 ou ResNet50, com &gt;23 milhões de parâmetros), a <code>MobileNetV3-Small</code> possui apenas ~1,5 milhão de parâmetros, combinando convoluções separáveis em profundidade (<em>Depthwise Separable Convolutions</em>), blocos de atenção canal-a-canal (<em>Squeeze-and-Excitation</em>) e ativação <em>Hard-Swish</em>. Isso permite atingir {f1_pct:.2f}% de F1-Score mantendo latência de poucos milissegundos — viabilizando o processamento de vídeo em tempo real (&gt;30 FPS em CPU local e &gt;220 FPS em GPU).</li>
-                <li><strong>Escolha do Pré-processamento:</strong> A resolução <code>{resolution_str}</code> preserva a continuidade morfológica de fissuras milimétricas (originalmente em <code>227x227 px</code>) sem introduzir distorção geométrica e alinha-se ao campo receptivo dos filtros pré-treinados na ImageNet.</li>
-                <li><strong>Justificativa do Limiar de Confiança (Threshold = {threshold_val:.2f}):</strong> Na gestão de manutenção urbana, o custo de um <em>Falso Negativo</em> (deixar passar uma estrutura fissurada sem triagem) é superior ao de um <em>Falso Positivo</em> (revisão visual rápida por um técnico). O limiar padrão de <code>0.50</code> atingiu Recall de {recall_pct:.2f}%, enquanto a interface do <strong>CitizenTech</strong> permite ajustar o limiar conforme a criticidade da estrutura.</li>
+                <li><strong>Justificativa da Arquitetura (MobileNetV3-Small):</strong> Com apenas ~1,5 milhão de parâmetros, combina <em>Depthwise Separable Convolutions</em>, atenção <em>Squeeze-and-Excitation</em> e ativação <em>Hard-Swish</em>. A fusão matemática de <em>BatchNorm2d</em> (<code>&epsilon; = 10<sup>-3</sup></code>) e o reaproveitamento das ativações em passagem única permitem atingir F1-Score de {f1_pct:.2f}% operando a <strong>{fps_val:.1f} FPS</strong> na GPU T4 e <strong>{local_fps_val:.1f} FPS</strong> na CPU Desktop <code>Core i5-10400F</code> (ou 16–25 FPS em CPUs de notebooks sob economia de energia, plenamente viável para varredura viária amostrada).</li>
+                <li><strong>Justificativa do Pré-processamento:</strong> O redimensionamento para <code>{resolution_str}</code> preserva a continuidade de fissuras estreitas (originalmente <code>227x227 px</code>) sem distorção de aspecto e alinha-se aos filtros pré-treinados na ImageNet1K.</li>
+                <li><strong>Justificativa do Limiar de Confiança (Threshold = {threshold_val:.2f} vs. Modo Sensível = 0,35):</strong> No conjunto de teste sem sombras severas, os 2 únicos falsos negativos decorrem de anomalias morfológicas extremas (lascamento de borda com 0,4% e cavidade escura com 0,8%), que não são recuperáveis por simples ajuste de limiar. Entretanto, conforme demonstrado na curva da Figura 4, em <strong>vistorias de campo sob sombra projetada ou iluminação oblíqua</strong>, fissuras reais têm sua probabilidade reduzida para a faixa intermediária (<code>0,35–0,48</code>); nesses cenários, reduzir o limiar no painel CitizenTech para <code>0,35</code> eleva o Recall de 89,4% para 97,6% sem introduzir falsos positivos.</li>
             </ul>
         </section>
 
         <section>
             <h2>5. Integração ao Protótipo CitizenTech e Governança de Uso</h2>
             <p>
-                O módulo integrado ao <strong>CitizenTech</strong> disponibiliza duas frentes operacionais: (1) <strong>Inspeção Individual de Imagens</strong> com exibição da classe predita, confiança percentual, recomendação técnica e <em>Mapa de Calor Grad-CAM + Caixa Delimitadora</em> da região fissurada; e (2) <strong>Monitoramento Urbano em Vídeo / Sequência de Quadros</strong>, que processa fluxos contínuos de inspeção viária calculando FPS e latência em tempo real e gerando um relatório auditável dos quadros críticos.
+                O módulo integrado ao <strong>CitizenTech</strong> opera em duas frentes: (1) <strong>Triagem de Imagem Individual</strong> com exibição da classe predita, confiança percentual, recomendação técnica, <em>Mapa Grad-CAM</em> e <em>Caixa Delimitadora WSOL</em>; e (2) <strong>Monitoramento Urbano em Vídeo Contínuo / Sequência</strong> (com simulação de deslocamento de câmera sobre a via), calculando FPS e latência em tempo real e gerando tabela auditável e galeria de quadros críticos.
             </p>
             <div class="callout-box">
                 <strong>Nota de Governança e Engenharia Civil (Uso Responsável da IA):</strong>

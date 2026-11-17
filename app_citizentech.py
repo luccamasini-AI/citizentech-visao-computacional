@@ -292,7 +292,7 @@ def render_single_image_inspection_tab(
     with img_col3:
         st.image(
             annotated_box_image,
-            caption="3. Localização Visual para Triagem CitizenTech",
+            caption="3. Localização Fracamente Supervisionada (WSOL / Grad-CAM ≥ 0.45)",
             use_container_width=True,
         )
 
